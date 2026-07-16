@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------------------
+# Secrets — never commit these.
+# main.py reads the bot token from DISCORD_TOKEN, but falls back to a cached
+# .discord_token file, so that file can exist locally without you noticing.
+# ---------------------------------------------------------------------------
+.discord_token
+.env
+.env.*
+!.env.example
+*.token
+secrets.json
+
+# ---------------------------------------------------------------------------
+# Runtime state — written by the bot at runtime. Not secret, but committing it
+# means a fresh clone starts with someone else's "already announced" list and
+# silently skips real uploads.
+# ---------------------------------------------------------------------------
+panel_state.json
+notifications_state.json
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
