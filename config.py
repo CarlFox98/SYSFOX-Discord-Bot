@@ -37,6 +37,23 @@ def _opt(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+def _resolve_health_port() -> int:
+    """Pick the port the health server binds to.
+
+    On bot-hosting.net the reachable port is the panel-allocated SERVER_PORT, so
+    we prefer it. HEALTH_PORT is honored next (useful if you ever expose a second
+    port explicitly), and 8080 is the local-development fallback.
+    """
+    for name in ("SERVER_PORT", "HEALTH_PORT"):
+        raw = os.environ.get(name, "").strip()
+        if raw:
+            try:
+                return int(raw)
+            except ValueError:
+                raise ConfigError(f"{name} must be an integer, got {raw!r}")
+    return 8080
+
+
 def _int(name: str, *, required: bool = False, default: int = 0) -> int:
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -117,7 +134,7 @@ class Config:
             clips_role_id=_int("CLIPS_ROLE_ID", required=True),
             videos_role_id=_int("VIDEOS_ROLE_ID", required=True),
             shorts_role_id=_int("SHORTS_ROLE_ID", required=True),
-            health_port=_int("HEALTH_PORT", default=8080),
+            health_port=_resolve_health_port(),
             poll_interval_live=_int("POLL_INTERVAL_LIVE", default=60),
             poll_interval_clips=_int("POLL_INTERVAL_CLIPS", default=300),
             poll_interval_youtube=_int("POLL_INTERVAL_YOUTUBE", default=300),
