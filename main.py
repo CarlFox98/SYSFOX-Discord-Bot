@@ -24,6 +24,7 @@ from state import State
 from cogs.notifications import NotificationsCog
 from cogs.panel import PanelCog, RolePanel
 from cogs.admin import AdminCog
+from cogs.giveaways import setup_giveaways
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,6 +58,8 @@ class SysfoxBot(commands.Bot):
         await self.add_cog(
             NotificationsCog(self, self.config, self.state, self.tracker, self.session)
         )
+
+        await setup_giveaways(self)
 
         # Sync commands to the guild for instant (non-1-hour-delayed) availability.
         guild = discord.Object(id=self.config.guild_id)
