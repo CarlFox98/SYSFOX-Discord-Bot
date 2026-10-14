@@ -49,7 +49,7 @@ class SysfoxBot(commands.Bot):
         await self.health_server.start()
         log.info("Health endpoint listening on :%d/health", self.config.health_port)
 
-        # Persistent panel view — must be added before we connect so button
+        # Persistent panel view: must be added before we connect so button
         # clicks on an already-posted panel are handled after a restart.
         self.add_view(RolePanel(self.config))
 

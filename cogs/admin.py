@@ -4,12 +4,21 @@ SYSFOX :: admin commands
   /status      - health summary for each loop + uptime + guild count
   /testnotify  - drops a sample notification embed in the current channel (no ping)
   /postpanel   - (re)posts the role opt-in panel to the configured panel channel
+  /reboot      - restarts the bot process
+  /ping        - latency check (bot response time + gateway ping)
+  /config      - show loaded config values (tokens redacted)
+  /state       - show state store stats (seen clips, videos, primed streams)
+  /guilds      - list all guilds the bot is in with member counts
 
-All three require the Manage Server permission.
+All require the Manage Server permission.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import signal
+import sys
 import time
 
 import discord
@@ -82,7 +91,7 @@ class AdminCog(commands.Cog):
             embed = notif.live_embed(
                 Stream(
                     id="test",
-                    title="[TEST] Satisfactory — factory expansion night",
+                    title="[TEST] Satisfactory: factory expansion night",
                     game_name="Satisfactory",
                     started_at=now,
                     thumbnail_url="",
@@ -113,7 +122,7 @@ class AdminCog(commands.Cog):
             )
 
         await interaction.response.send_message(
-            content="*(preview — no role was pinged)*", embed=embed, ephemeral=True
+            content="*(preview, no role was pinged)*", embed=embed, ephemeral=True
         )
 
     @app_commands.command(name="postpanel", description="(Re)post the role opt-in panel.")
@@ -125,7 +134,7 @@ class AdminCog(commands.Cog):
             channel, discord.abc.Messageable
         ):
             await interaction.response.send_message(
-                "Panel channel is misconfigured — check PANEL_CHANNEL_ID.", ephemeral=True
+                "Panel channel is misconfigured. Check PANEL_CHANNEL_ID.", ephemeral=True
             )
             return
         await channel.send(embed=panel_cog.build_embed(), view=RolePanel(self.config))
@@ -133,11 +142,110 @@ class AdminCog(commands.Cog):
             f"Panel posted in <#{self.config.panel_channel_id}>.", ephemeral=True
         )
 
+    @app_commands.command(name="reboot", description="Restart the bot process.")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def reboot(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(
+            "🔄 Restarting…", ephemeral=True
+        )
+        # Send SIGTERM to self so the process exits cleanly and the panel restarts it.
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    @app_commands.command(name="ping", description="Check bot latency (response time + gateway ping).")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def ping(self, interaction: discord.Interaction) -> None:
+        start = time.monotonic()
+        await interaction.response.send_message("🏓 Pinging…", ephemeral=True)
+        delta = time.monotonic() - start
+        ws_latency = self.bot.latency
+        embed = branding.dialog(
+            "Bot Latency",
+            f"**API response:** {delta * 1000:.0f} ms\n"
+            f"**WebSocket (gateway):** {ws_latency * 1000:.0f} ms",
+            color=branding.LIME,
+        )
+        await interaction.edit_original_response(content=None, embed=embed)
+
+    @app_commands.command(name="config", description="Show loaded config values (tokens redacted).")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def _cmd_config(self, interaction: discord.Interaction) -> None:
+        c = self.config
+        lines = [
+            f"**Guild ID:** `{c.guild_id}`",
+            f"**Twitch login:** `{c.twitch_login}`",
+            f"**YouTube channel:** `{c.youtube_channel_id}`",
+            f"**Health port:** `{c.health_port}`",
+            f"**Poll intervals:** live {c.poll_interval_live}s / clips: {c.poll_interval_clips}s / YouTube: {c.poll_interval_youtube}s",
+            f"**State path:** `{c.state_path}`",
+            "",
+            "**Tokens:** set ✅ (values hidden for security)",
+        ]
+        channels = [
+            ("Live", c.live_channel_id),
+            ("Clips", c.clips_channel_id),
+            ("Videos", c.videos_channel_id),
+            ("Shorts", c.shorts_channel_id),
+            ("Panel", c.panel_channel_id),
+            ("Alerts", c.alert_channel_id),
+        ]
+        roles = [
+            ("Live", c.live_role_id),
+            ("Clips", c.clips_role_id),
+            ("Videos", c.videos_role_id),
+            ("Shorts", c.shorts_role_id),
+        ]
+        for name, cid in channels:
+            lines.append(f"**{name} channel:** `{cid}`")
+        for name, rid in roles:
+            lines.append(f"**{name} role:** `{rid}`")
+        embed = branding.dialog("Configuration", "\n".join(lines), color=branding.TEAL)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="state", description="Show state store stats (seen clips, videos, primed streams).")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def state(self, interaction: discord.Interaction) -> None:
+        from state import State
+        s = self.bot.state  # type: ignore[attr-defined]
+        try:
+            data = s._load()
+        except Exception as exc:
+            await interaction.response.send_message(
+                f"Failed to read state file: {exc}", ephemeral=True
+            )
+            return
+        total_seen = sum(s.seen.values()) if hasattr(s, "seen") else 0
+        primed = len(s.primed) if hasattr(s, "primed") else 0
+        embed = branding.dialog(
+            "State Store",
+            f"**Seen items:** {total_seen}\n"
+            f"**Primed streams:** {primed}\n"
+            f"**File:** `{self.config.state_path}`\n"
+            f"**Raw JSON:** {len(json.dumps(data))} bytes",
+            color=branding.TEAL,
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="guilds", description="List all guilds the bot is in with member counts.")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def guilds(self, interaction: discord.Interaction) -> None:
+        guilds = sorted(self.bot.guilds, key=lambda g: g.member_count or 0, reverse=True)
+        total = sum(g.member_count or 0 for g in guilds)
+        parts = [f"**{len(guilds)} guild(s), {total} total members**\n"]
+        for i, g in enumerate(guilds):
+            name = g.name if g.name else "(unknown)"
+            parts.append(f"`{i+1}.` **{name}**: {g.member_count or '?'} members")
+            if len(parts) > 20:
+                parts.append("\n*(truncated, too many guilds)*")
+                break
+        text = "\n".join(parts)
+        embed = branding.dialog("Guild List", text, color=branding.TEAL)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     async def _perm_error(self, interaction: discord.Interaction, error) -> None:
         if isinstance(error, app_commands.MissingPermissions):
             msg = "You need the **Manage Server** permission to use that."
         else:
-            msg = f"Command error: `{error}`"
+            msg = f"⚠️ {type(error).__name__}: {error}"
         if interaction.response.is_done():
             await interaction.followup.send(msg, ephemeral=True)
         else:
@@ -145,5 +253,11 @@ class AdminCog(commands.Cog):
 
     async def cog_load(self) -> None:
         # Route app-command errors for this cog's commands to a friendly handler.
-        for cmd in (self.status, self.testnotify, self.postpanel):
-            cmd.on_error = self._perm_error
+        self.status.on_error = self._perm_error
+        self.testnotify.on_error = self._perm_error
+        self.postpanel.on_error = self._perm_error
+        self.reboot.on_error = self._perm_error
+        self.ping.on_error = self._perm_error
+        self._cmd_config.on_error = self._perm_error
+        self.state.on_error = self._perm_error
+        self.guilds.on_error = self._perm_error

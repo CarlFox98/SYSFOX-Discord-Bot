@@ -73,9 +73,9 @@ class TwitchClient:
             "Authorization": f"Bearer {self._token}",
         }
 
-    async def _ensure_token(self, session: aiohttp.ClientSession) -> None:
+    async def _ensure_token(self, session: aiohttp.ClientSession, *, force: bool = False) -> None:
         # Refresh a minute before expiry to avoid edge-of-expiry 401s.
-        if self._token and time.time() < self._token_expiry - 60:
+        if not force and self._token and time.time() < self._token_expiry - 60:
             return
         params = {
             "client_id": self._client_id,
@@ -88,17 +88,28 @@ class TwitchClient:
         self._token = data["access_token"]
         self._token_expiry = time.time() + int(data.get("expires_in", 3600))
 
+
+    async def _get_json(
+        self, session: aiohttp.ClientSession, url: str, *, params: dict
+    ) -> dict:
+        """GET a Helix endpoint; on 401 (revoked/rotated token) refresh once and retry."""
+        await self._ensure_token(session)
+        async with session.get(url, headers=self._headers(), params=params) as resp:
+            if resp.status == 401:
+                await self._ensure_token(session, force=True)
+                async with session.get(
+                    url, headers=self._headers(), params=params
+                ) as retry:
+                    retry.raise_for_status()
+                    return await retry.json()
+            resp.raise_for_status()
+            return await resp.json()
+
     async def _ensure_broadcaster_id(self, session: aiohttp.ClientSession) -> str:
         if self._broadcaster_id:
             return self._broadcaster_id
         await self._ensure_token(session)
-        async with session.get(
-            f"{HELIX}/users",
-            headers=self._headers(),
-            params={"login": self._login},
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
+        data = await self._get_json(session, f"{HELIX}/users", params={"login": self._login})
         entries = data.get("data", [])
         if not entries:
             raise RuntimeError(f"Twitch user not found: {self._login}")
@@ -108,13 +119,7 @@ class TwitchClient:
     async def get_live_stream(self, session: aiohttp.ClientSession) -> Stream | None:
         """Return the current live Stream, or None if the channel is offline."""
         await self._ensure_token(session)
-        async with session.get(
-            f"{HELIX}/streams",
-            headers=self._headers(),
-            params={"user_login": self._login},
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
+        data = await self._get_json(session, f"{HELIX}/streams", params={"user_login": self._login})
         entries = data.get("data", [])
         if not entries:
             return None
@@ -142,17 +147,15 @@ class TwitchClient:
         started = time.strftime(
             "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 24 * 3600)
         )
-        async with session.get(
+        data = await self._get_json(
+            session,
             f"{HELIX}/clips",
-            headers=self._headers(),
             params={
                 "broadcaster_id": broadcaster_id,
                 "first": str(first),
                 "started_at": started,
             },
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
+        )
         clips: list[Clip] = []
         for c in data.get("data", []):
             clips.append(

@@ -37,3 +37,7 @@ env/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Runtime data and server-side backups
+data/
+*.bak

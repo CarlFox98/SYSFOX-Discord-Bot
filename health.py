@@ -12,10 +12,13 @@ Two jobs:
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 
 from aiohttp import web
+
+log = logging.getLogger("sysfox.health")
 
 
 @dataclass
@@ -94,10 +97,18 @@ class HealthServer:
         self._runner: web.AppRunner | None = None
 
     async def start(self) -> None:
-        app = web.Application()
+        app = web.Application(middlewares=[_errors_middleware])
         app.router.add_get("/health", self._handle)
-        app.router.add_get("/", self._handle)
-        self._runner = web.AppRunner(app)
+        app.router.add_get("/", self._root)
+
+        # Internet scanners send junk requests all day. aiohttp rejects those
+        # before they reach a handler and logs a full traceback for each one,
+        # which made the console look like the bot was crashing. Keep that
+        # logger quiet; real handler errors are logged by the middleware.
+        logging.getLogger("aiohttp.server").setLevel(logging.CRITICAL)
+
+        # access_log=None: don't print a line for every scanner hit.
+        self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         site = web.TCPSite(self._runner, host="0.0.0.0", port=self._port)
         await site.start()
@@ -106,8 +117,26 @@ class HealthServer:
         if self._runner is not None:
             await self._runner.cleanup()
 
+    async def _root(self, _request: web.Request) -> web.Response:
+        return web.Response(text="SYSFOX is running. Health: /health\n")
+
     async def _handle(self, _request: web.Request) -> web.Response:
         snap = self._tracker.snapshot()
+        # Public endpoint: drop raw error text so scanners can't read internals.
+        # (/status in Discord still shows everything.)
+        for lh in snap.get("loops", {}).values():
+            lh.pop("last_error", None)
         # Always 200 so UptimeRobot treats "reachable" as alive; the JSON body
         # still carries the degraded flag for anyone who inspects it.
         return web.json_response(snap)
+
+
+@web.middleware
+async def _errors_middleware(request: web.Request, handler):
+    try:
+        return await handler(request)
+    except web.HTTPException:
+        raise  # 404s etc. pass through untouched
+    except Exception:  # noqa: BLE001
+        log.exception("Health server handler failed")
+        return web.Response(status=500, text="error")
