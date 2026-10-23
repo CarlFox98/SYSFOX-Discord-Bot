@@ -44,7 +44,8 @@ class SysfoxBot(commands.Bot):
         self.session: aiohttp.ClientSession | None = None
 
     async def setup_hook(self) -> None:
-        self.session = aiohttp.ClientSession()
+        # Hard timeout so one hung request can't stall a notification loop.
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
 
         await self.health_server.start()
         log.info("Health endpoint listening on :%d/health", self.config.health_port)

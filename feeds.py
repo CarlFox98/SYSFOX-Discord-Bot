@@ -14,7 +14,9 @@ failures before flagging degraded (see config thresholds).
 
 from __future__ import annotations
 
+import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import aiohttp
@@ -171,22 +173,43 @@ class TwitchClient:
         return clips
 
 
+class FeedError(RuntimeError):
+    """A feed fetch failed. The message is short enough to show in Discord."""
+
+
 class YouTubeClient:
     def __init__(self, feed_url: str) -> None:
         self._feed_url = feed_url
 
     async def get_recent_videos(
-        self, session: aiohttp.ClientSession, *, limit: int = 10
+        self,
+        session: aiohttp.ClientSession,
+        *,
+        limit: int = 10,
+        should_probe: Callable[[str], bool] | None = None,
     ) -> list[Video]:
         """Fetch the channel RSS feed and classify each entry as Short or video.
 
-        Raises on network/parse failure so the caller can count it toward the
-        (more forgiving) YouTube degradation threshold.
+        Only entries for which ``should_probe(video_id)`` is true get the
+        /shorts/ probe. Callers pass "not seen yet", so a normal poll makes ONE
+        request instead of one per feed entry (the old behaviour made 11 requests
+        every 5 minutes from a shared datacenter IP, which got rate-limited).
+
+        Raises a short, readable error on network/parse failure so the caller
+        can count it toward the YouTube degradation threshold.
         """
         headers = {"User-Agent": "SYSFOX/1.0 (+https://github.com/CarlFox98)"}
-        async with session.get(self._feed_url, headers=headers) as resp:
-            resp.raise_for_status()
-            raw = await resp.text()
+        try:
+            async with session.get(self._feed_url, headers=headers) as resp:
+                if resp.status >= 400:
+                    raise FeedError(f"YouTube feed returned HTTP {resp.status}")
+                raw = await resp.text()
+        except FeedError:
+            raise
+        except asyncio.TimeoutError as exc:
+            raise FeedError("YouTube feed timed out") from exc
+        except aiohttp.ClientError as exc:
+            raise FeedError(f"YouTube feed network error: {type(exc).__name__}") from exc
 
         parsed = feedparser.parse(raw)
         if parsed.bozo and not parsed.entries:
@@ -197,7 +220,8 @@ class YouTubeClient:
             vid = getattr(entry, "yt_videoid", None) or entry.get("id", "").split(":")[-1]
             if not vid:
                 continue
-            is_short = await self._is_short(session, vid)
+            probe = should_probe(vid) if should_probe is not None else True
+            is_short = await self._is_short(session, vid) if probe else False
             videos.append(
                 Video(
                     id=vid,

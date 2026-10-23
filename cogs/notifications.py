@@ -44,6 +44,8 @@ class NotificationsCog(commands.Cog):
         self.tracker = tracker
         self.session = session
         self._post_alerted: dict[int, float] = {}
+        self._last_warning: dict[str, float] = {}
+        self._warned: dict[str, bool] = {}
 
         self.twitch = TwitchClient(
             config.twitch_client_id, config.twitch_client_secret, config.twitch_login
@@ -116,11 +118,17 @@ class NotificationsCog(commands.Cog):
         except discord.HTTPException as exc:
             log.warning("Could not post alert: %s", exc)
 
+    # A loop that keeps flapping (degrade -> recover -> degrade) only gets one
+    # warning per ALERT_COOLDOWN, and a recovery note only follows a warning
+    # that was actually posted. Stops #bot-config turning into a log file.
+    ALERT_COOLDOWN = 6 * 3600
+
     async def _report(self, loop_health, ok: bool, error: str = "") -> None:
         """Feed a loop result to the tracker and emit alert/recovery messages."""
+        name = loop_health.name
         if ok:
             recovered = loop_health.record_success()
-            if recovered:
+            if recovered and self._warned.pop(name, False):
                 embed = branding.dialog(
                     "System Recovered",
                     f"`{loop_health.name}` is responding normally again.",
@@ -129,7 +137,10 @@ class NotificationsCog(commands.Cog):
                 await self._safe_alert(embed)
         else:
             newly_degraded = loop_health.record_failure(error)
-            if newly_degraded:
+            now = time.monotonic()
+            if newly_degraded and now - self._last_warning.get(name, -1e9) >= self.ALERT_COOLDOWN:
+                self._last_warning[name] = now
+                self._warned[name] = True
                 embed = branding.dialog(
                     "⚠ System Warning",
                     f"`{loop_health.name}` has failed "
@@ -240,9 +251,15 @@ class NotificationsCog(commands.Cog):
     @tasks.loop(seconds=300)
     async def youtube_loop(self) -> None:
         try:
-            videos = await self.youtube.get_recent_videos(self.session)
+            primed = self.state.is_primed("youtube")
+            videos = await self.youtube.get_recent_videos(
+                self.session,
+                # Only probe /shorts/ for uploads we haven't posted yet.
+                should_probe=lambda vid: primed and not self.state.has_seen("seen_videos", vid),
+            )
         except Exception as exc:  # noqa: BLE001
-            await self._report(self.h_youtube, ok=False, error=repr(exc))
+            log.warning("YouTube poll failed: %s", exc)
+            await self._report(self.h_youtube, ok=False, error=str(exc) or type(exc).__name__)
             return
 
         await self._report(self.h_youtube, ok=True)

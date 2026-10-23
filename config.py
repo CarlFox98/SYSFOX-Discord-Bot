@@ -85,11 +85,11 @@ class Config:
     state_path: str = "data/state.json"
 
     # Consecutive-failure thresholds before a loop is flagged "degraded".
-    # YouTube's RSS feed 404s intermittently from datacenter IPs, so it gets a
-    # more forgiving threshold (~30 min at a 5-min poll) than Twitch.
+    # YouTube's RSS feed 404s/5xxs intermittently from datacenter IPs, so it gets
+    # a much more forgiving threshold (~1 hour at a 5-min poll) than Twitch.
     fail_threshold_twitch: int = 3
     fail_threshold_clips: int = 3
-    fail_threshold_youtube: int = 6
+    fail_threshold_youtube: int = 12
 
     @property
     def youtube_feed_url(self) -> str:
@@ -122,4 +122,5 @@ class Config:
             poll_interval_clips=_int("POLL_INTERVAL_CLIPS", default=300),
             poll_interval_youtube=_int("POLL_INTERVAL_YOUTUBE", default=300),
             state_path=_opt("STATE_PATH", "data/state.json"),
+            fail_threshold_youtube=_int("FAIL_THRESHOLD_YOUTUBE", default=12),
         )
