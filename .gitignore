@@ -1,7 +1,6 @@
 # ---------------------------------------------------------------------------
-# Secrets — never commit these.
-# main.py reads the bot token from DISCORD_TOKEN, but falls back to a cached
-# .discord_token file, so that file can exist locally without you noticing.
+# Secrets: never commit these. The bot reads its token from DISCORD_TOKEN;
+# the extra patterns below are a safety net for stray local token files.
 # ---------------------------------------------------------------------------
 .discord_token
 .env
@@ -11,7 +10,7 @@
 secrets.json
 
 # ---------------------------------------------------------------------------
-# Runtime state — written by the bot at runtime. Not secret, but committing it
+# Runtime state written by the bot. Not secret, but committing it
 # means a fresh clone starts with someone else's "already announced" list and
 # silently skips real uploads.
 # ---------------------------------------------------------------------------
