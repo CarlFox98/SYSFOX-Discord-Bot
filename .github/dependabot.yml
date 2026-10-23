@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # Python packages: one grouped PR a week. CI runs on it, so merge when it's
+  # green, then restart the bot to pick it up.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/New_York
+    groups:
+      python-packages:
+        patterns: ["*"]
+    commit-message:
+      prefix: deps
+    open-pull-requests-limit: 3
+
+  # Versions of the actions the CI workflow uses.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

@@ -557,6 +557,7 @@ class NotificationsCog(commands.Cog):
         self._reset_stats()
 
     @app_commands.command(name="digest", description="Preview the daily report now (just for you).")
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def digest(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(embed=self.build_digest(), ephemeral=True)

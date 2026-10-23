@@ -1,5 +1,7 @@
 # SYSFOX: Neo's Den Discord Bot
 
+[![CI](https://github.com/CarlFox98/SYSFOX-Discord-Bot/actions/workflows/ci.yml/badge.svg)](https://github.com/CarlFox98/SYSFOX-Discord-Bot/actions/workflows/ci.yml)
+
 The notification bot for **Neo's Den**. It watches Twitch and YouTube, posts
 opt-in pings into the server, and runs the den's giveaways, all with a
 Windows 98 look.
@@ -64,6 +66,8 @@ cogs/streamtools.py     /delay and /cancelstream
 cogs/giveaways.py       /giveaway and the claim flow
 cogs/panel.py           opt-in role button panel
 cogs/admin.py           /status, /testnotify, /postpanel and friends
+tests/smoke_test.py     boots every cog offline and checks commands and embeds
+.github/                CI workflow and Dependabot config
 requirements.txt        pinned dependencies
 .env.example            template for every setting
 ```
@@ -107,7 +111,13 @@ starts, so updating is just push, then restart.
 
 **Shipping a change**
 1. Push to `main`.
-2. Hit **Restart** in the panel. The new code is pulled on startup.
+2. Wait for the **CI** check on the commit to go green (about a minute). It
+   lints the code and boots every cog offline, so a red ❌ means the bot would
+   crash on restart.
+3. Hit **Restart** in the panel. The new code is pulled on startup.
+
+Dependabot opens one grouped PR a week for package updates. CI runs on it
+too: merge it when it's green, then restart.
 
 > ⚠️ **Don't use Reinstall for updates.** Reinstall wipes `data/`, which holds
 > the giveaway codes and queue plus the "already announced" lists. Restart is
@@ -141,6 +151,14 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env      # then fill in .env
 python main.py
+```
+
+Check your changes the same way CI does (no Discord connection needed):
+
+```bash
+pip install ruff
+ruff check --select E9,F .
+python tests/smoke_test.py
 ```
 
 ## Notes

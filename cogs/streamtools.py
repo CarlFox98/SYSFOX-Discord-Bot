@@ -64,6 +64,7 @@ class StreamToolsCog(commands.Cog):
         note="Optional extra line, like the reason.",
         ping="Ping the Live role (default yes).",
     )
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def delay(
         self,
@@ -87,6 +88,7 @@ class StreamToolsCog(commands.Cog):
         reason="Optional reason or when the next stream is.",
         ping="Ping the Live role (default yes).",
     )
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def cancelstream(
         self,

@@ -10,7 +10,7 @@ re-installs and never live in the git repo. For local development you can drop a
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # Optional: load a local .env for development. In production (bot-hosting.net) the
 # variables are already in the environment, so a missing .env is not an error.

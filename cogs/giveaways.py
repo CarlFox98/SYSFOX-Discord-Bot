@@ -566,12 +566,20 @@ class GiveawaysCog(commands.Cog):
             if g is not None and g["status"] == "running":
                 await self._refresh_post(g)
 
+        # Re-check each one under the lock: the lists above were built before
+        # the post refreshes, and a cancel or a claim can land in between.
+        # Without this, a winner who claims at the last second could get
+        # rerolled, handing the same code to a second person.
         for g in due:
             async with self.lock:
+                if g["status"] != "running" or time.time() < g["ends_at"]:
+                    continue
                 await self._draw_and_announce(g)
 
         for g in expired:
             async with self.lock:
+                if g["status"] != "awaiting_claim" or time.time() < (g.get("winner_deadline") or 0):
+                    continue
                 old = g["winner_id"]
                 g["past_winners"].append(old)
                 await self._close_announcement(
@@ -747,6 +755,24 @@ class GiveawaysCog(commands.Cog):
             self.store.save()
         await interaction.response.send_message(f"Removed **{item['prize']}** from the queue.", ephemeral=True)
         await self._log(f"queued prize removed by <@{interaction.user.id}>: **{item['prize']}**")
+
+
+    async def cog_app_command_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError
+    ) -> None:
+        """Never leave a /giveaway command stuck on 'thinking'."""
+        log.warning("giveaway command failed: %r", error)
+        if isinstance(error, app_commands.MissingPermissions):
+            msg = "You need the **Manage Server** permission to use that."
+        else:
+            msg = f"⚠️ That didn't work: {type(error).__name__}. The bot log has the details."
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except discord.HTTPException:
+            pass
 
 
 async def setup_giveaways(bot: commands.Bot) -> None:

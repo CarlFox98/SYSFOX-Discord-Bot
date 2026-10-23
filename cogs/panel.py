@@ -83,6 +83,12 @@ class _RoleButton(discord.ui.Button):
                 ephemeral=True,
             )
             return
+        except discord.HTTPException:
+            await interaction.response.send_message(
+                "Discord hiccuped. Give it a second and press the button again.",
+                ephemeral=True,
+            )
+            return
         await interaction.response.send_message(msg, ephemeral=True)
 
 

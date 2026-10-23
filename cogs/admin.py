@@ -10,15 +10,15 @@ SYSFOX :: admin commands
   /state       - show state store stats (seen clips, videos, primed streams)
   /guilds      - list all guilds the bot is in with member counts
 
-All require the Manage Server permission.
+All require the Manage Server permission and are hidden from members who
+don't have it.
 """
 
 from __future__ import annotations
 
-import json
 import os
+import logging
 import signal
-import sys
 import time
 
 import discord
@@ -31,6 +31,8 @@ from feeds import Clip, Stream, Video
 from health import HealthTracker
 from cogs.panel import PanelCog, RolePanel
 
+log = logging.getLogger("sysfox")
+
 
 class AdminCog(commands.Cog):
     def __init__(self, bot: commands.Bot, config: Config, tracker: HealthTracker) -> None:
@@ -39,6 +41,7 @@ class AdminCog(commands.Cog):
         self.tracker = tracker
 
     @app_commands.command(name="status", description="Show SYSFOX health and uptime.")
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def status(self, interaction: discord.Interaction) -> None:
         snap = self.tracker.snapshot()
@@ -76,6 +79,7 @@ class AdminCog(commands.Cog):
             app_commands.Choice(name="Short", value="short"),
         ]
     )
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def testnotify(
         self, interaction: discord.Interaction, kind: app_commands.Choice[str]
@@ -142,6 +146,7 @@ class AdminCog(commands.Cog):
         )
 
     @app_commands.command(name="postpanel", description="(Re)post the role opt-in panel.")
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def postpanel(self, interaction: discord.Interaction) -> None:
         panel_cog = self.bot.get_cog("PanelCog")
@@ -159,6 +164,7 @@ class AdminCog(commands.Cog):
         )
 
     @app_commands.command(name="reboot", description="Restart the bot process.")
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def reboot(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(
@@ -168,6 +174,7 @@ class AdminCog(commands.Cog):
         os.kill(os.getpid(), signal.SIGTERM)
 
     @app_commands.command(name="ping", description="Check bot latency (response time + gateway ping).")
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def ping(self, interaction: discord.Interaction) -> None:
         start = time.monotonic()
@@ -183,6 +190,7 @@ class AdminCog(commands.Cog):
         await interaction.edit_original_response(content=None, embed=embed)
 
     @app_commands.command(name="config", description="Show loaded config values (tokens redacted).")
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def _cmd_config(self, interaction: discord.Interaction) -> None:
         c = self.config
@@ -218,30 +226,25 @@ class AdminCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="state", description="Show state store stats (seen clips, videos, primed streams).")
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def state(self, interaction: discord.Interaction) -> None:
-        from state import State
-        s = self.bot.state  # type: ignore[attr-defined]
-        try:
-            data = s._load()
-        except Exception as exc:
-            await interaction.response.send_message(
-                f"Failed to read state file: {exc}", ephemeral=True
-            )
-            return
-        total_seen = sum(s.seen.values()) if hasattr(s, "seen") else 0
-        primed = len(s.primed) if hasattr(s, "primed") else 0
+        stats = self.bot.state.stats()  # type: ignore[attr-defined]
+        primed = ", ".join(k for k, v in stats["primed"].items() if v) or "none yet"
+        live = f"yes (stream `{stats['live_stream_id']}`)" if stats["live_stream_id"] else "no"
         embed = branding.dialog(
             "State Store",
-            f"**Seen items:** {total_seen}\n"
-            f"**Primed streams:** {primed}\n"
-            f"**File:** `{self.config.state_path}`\n"
-            f"**Raw JSON:** {len(json.dumps(data))} bytes",
+            f"**Seen clips:** {stats['seen_clips']}\n"
+            f"**Seen videos:** {stats['seen_videos']}\n"
+            f"**Primed:** {primed}\n"
+            f"**Tracking a live post:** {live}\n"
+            f"**File:** `{self.config.state_path}` ({stats['file_bytes']} bytes)",
             color=branding.TEAL,
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="guilds", description="List all guilds the bot is in with member counts.")
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def guilds(self, interaction: discord.Interaction) -> None:
         guilds = sorted(self.bot.guilds, key=lambda g: g.member_count or 0, reverse=True)
@@ -257,23 +260,23 @@ class AdminCog(commands.Cog):
         embed = branding.dialog("Guild List", text, color=branding.TEAL)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    async def _perm_error(self, interaction: discord.Interaction, error) -> None:
+    async def cog_app_command_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError
+    ) -> None:
+        """Friendly replies for every command in this cog.
+
+        (Assigning a bound method to Command.on_error doesn't work: discord.py
+        calls it as on_error(cog, interaction, error), one argument too many.)
+        """
         if isinstance(error, app_commands.MissingPermissions):
             msg = "You need the **Manage Server** permission to use that."
         else:
+            log.warning("admin command failed: %r", error)
             msg = f"⚠️ {type(error).__name__}: {error}"
-        if interaction.response.is_done():
-            await interaction.followup.send(msg, ephemeral=True)
-        else:
-            await interaction.response.send_message(msg, ephemeral=True)
-
-    async def cog_load(self) -> None:
-        # Route app-command errors for this cog's commands to a friendly handler.
-        self.status.on_error = self._perm_error
-        self.testnotify.on_error = self._perm_error
-        self.postpanel.on_error = self._perm_error
-        self.reboot.on_error = self._perm_error
-        self.ping.on_error = self._perm_error
-        self._cmd_config.on_error = self._perm_error
-        self.state.on_error = self._perm_error
-        self.guilds.on_error = self._perm_error
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except discord.HTTPException:
+            pass

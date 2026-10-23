@@ -118,3 +118,18 @@ class State:
         with self._lock:
             self._data["live_meta"] = dict(meta)
             self._flush()
+
+    # --- read-only summary for /state ---
+    def stats(self) -> dict[str, Any]:
+        with self._lock:
+            try:
+                size = os.path.getsize(self._path)
+            except OSError:
+                size = 0
+            return {
+                "seen_clips": len(self._data.get("seen_clips", [])),
+                "seen_videos": len(self._data.get("seen_videos", [])),
+                "primed": dict(self._data.get("primed", {})),
+                "live_stream_id": self._data.get("live_stream_id"),
+                "file_bytes": size,
+            }
