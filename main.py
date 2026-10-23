@@ -24,6 +24,7 @@ from state import State
 from cogs.notifications import NotificationsCog
 from cogs.panel import PanelCog, RolePanel
 from cogs.admin import AdminCog
+from cogs.streamtools import StreamToolsCog
 from cogs.giveaways import setup_giveaways
 
 logging.basicConfig(
@@ -60,6 +61,7 @@ class SysfoxBot(commands.Bot):
             NotificationsCog(self, self.config, self.state, self.tracker, self.session)
         )
 
+        await self.add_cog(StreamToolsCog(self, self.config))
         await setup_giveaways(self)
 
         # Sync commands to the guild for instant (non-1-hour-delayed) availability.

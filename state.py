@@ -29,6 +29,7 @@ class State:
             "live_message_id": None,  # discord message id of the current go-live post
             "live_stream_id": None,   # twitch stream id currently announced
             "primed": {},           # {"clips": bool, "youtube": bool} first-run guards
+            "live_meta": {},        # current stream: started_at, peak viewers
         }
         self._load()
 
@@ -105,4 +106,15 @@ class State:
         with self._lock:
             self._data["live_message_id"] = message_id
             self._data["live_stream_id"] = stream_id
+            self._flush()
+
+    # --- extra details about the current stream (survive a restart mid-stream) ---
+    @property
+    def live_meta(self) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._data.get("live_meta") or {})
+
+    def set_live_meta(self, meta: dict[str, Any]) -> None:
+        with self._lock:
+            self._data["live_meta"] = dict(meta)
             self._flush()

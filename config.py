@@ -91,6 +91,11 @@ class Config:
     fail_threshold_clips: int = 3
     fail_threshold_youtube: int = 12
 
+    # Daily report in the alert channel (local time, 24h clock).
+    digest_enabled: bool = True
+    digest_hour: int = 9
+    digest_tz: str = "America/New_York"
+
     @property
     def youtube_feed_url(self) -> str:
         return (
@@ -123,4 +128,7 @@ class Config:
             poll_interval_youtube=_int("POLL_INTERVAL_YOUTUBE", default=300),
             state_path=_opt("STATE_PATH", "data/state.json"),
             fail_threshold_youtube=_int("FAIL_THRESHOLD_YOUTUBE", default=12),
+            digest_enabled=_opt("DIGEST_ENABLED", "1").lower() not in ("0", "false", "no", "off"),
+            digest_hour=min(23, max(0, _int("DIGEST_HOUR", default=9))),
+            digest_tz=_opt("DIGEST_TZ", "America/New_York"),
         )

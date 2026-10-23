@@ -34,6 +34,7 @@ class Stream:
     started_at: str
     thumbnail_url: str
     login: str
+    viewer_count: int = 0
 
     @property
     def url(self) -> str:
@@ -138,7 +139,22 @@ class TwitchClient:
             started_at=s.get("started_at", ""),
             thumbnail_url=thumb,
             login=self._login,
+            viewer_count=int(s.get("viewer_count") or 0),
         )
+
+    async def get_vod_url(self, session: aiohttp.ClientSession, stream_id: str) -> str | None:
+        """Return the VOD (past broadcast) URL for a stream, or None if VODs are
+        off or Twitch hasn't listed it yet."""
+        broadcaster_id = await self._ensure_broadcaster_id(session)
+        data = await self._get_json(
+            session,
+            f"{HELIX}/videos",
+            params={"user_id": broadcaster_id, "type": "archive", "first": "5"},
+        )
+        for v in data.get("data", []):
+            if str(v.get("stream_id")) == str(stream_id) and v.get("url"):
+                return v["url"]
+        return None
 
     async def get_recent_clips(
         self, session: aiohttp.ClientSession, *, first: int = 10

@@ -2,7 +2,7 @@
 SYSFOX :: admin commands
 
   /status      - health summary for each loop + uptime + guild count
-  /testnotify  - drops a sample notification embed in the current channel (no ping)
+  /testnotify  - shows a sample notification embed, only to you (no ping)
   /postpanel   - (re)posts the role opt-in panel to the configured panel channel
   /reboot      - restarts the bot process
   /ping        - latency check (bot response time + gateway ping)
@@ -70,6 +70,7 @@ class AdminCog(commands.Cog):
     @app_commands.choices(
         kind=[
             app_commands.Choice(name="Go-Live", value="live"),
+            app_commands.Choice(name="Stream ended", value="ended"),
             app_commands.Choice(name="Clip", value="clip"),
             app_commands.Choice(name="Video", value="video"),
             app_commands.Choice(name="Short", value="short"),
@@ -96,7 +97,22 @@ class AdminCog(commands.Cog):
                     started_at=now,
                     thumbnail_url="",
                     login=self.config.twitch_login,
-                )
+                    viewer_count=12,
+                ),
+                peak=18,
+            )
+        elif kind.value == "ended":
+            two_hours_ago = time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 2 * 3600 - 15 * 60)
+            )
+            embed = notif.ended_embed(
+                meta={
+                    "title": "[TEST] Satisfactory: factory expansion night",
+                    "game": "Satisfactory",
+                    "started_at": two_hours_ago,
+                    "peak": 18,
+                    "login": self.config.twitch_login,
+                }
             )
         elif kind.value == "clip":
             embed = notif.clip_embed(
